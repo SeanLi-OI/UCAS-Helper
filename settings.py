@@ -12,12 +12,15 @@ USER_INFO = {
     'password': '',
     'remember': 'undefined'  # 此处不要动
 }
+URLS={
+    'ft_url':'' # 填写自己的方糖通知url
+}
 SOURCE_DIR = ''
 
 # ------------------后面的不要动--------------#
 
 ACCOUNTS_PATH = 'accounts.json'
-URLS = {
+URLS.update({
     'base_url':{
         'http':'http://jwxk.ucas.ac.cn',
         'https':'https://jwxk.ucas.ac.cn',
@@ -57,8 +60,12 @@ URLS = {
     'base_evaluateTeacher_url':{
         'http':'http://jwxk.ucas.ac.cn/evaluate/evaluateTeacher/',
         'https':'https://jwxk.ucas.ac.cn/evaluate/evaluateTeacher/'
+    },
+    'humanity_url':{
+        'http':'http://jwxk.ucas.ac.cn/subject/humanityLecture/',
+        'https':'https://jwxk.ucas.ac.cn/subject/humanityLecture/'
     }
-}
+})
 
 # Assess message
 ASSESS_MSG = [

@@ -13,6 +13,7 @@ from core import ui
 from core.wifi import AccHacker
 from core.assess import Assesser
 from core.grade import GradeObserver
+from core.humanity import HlSelector
 from core.download import Downloader
 from core.wifi import WifiLoginer
 
@@ -59,6 +60,12 @@ def hack_accounts():
     hacker = AccHacker(data_path='data/data.txt', password_path='data/password.txt')
     hacker.run()
 
+@click.command(name='hln',help='Auto check, select humanity lecture and notify')
+def hl_select():
+    hl_selector = HlSelector(user_info=settings.USER_INFO,
+                             urls=settings.URLS)
+    hl_selector.run()
+
 @click.command(name='login',help='Login campus network')
 def login_wifi():
     wifiLoginer = WifiLoginer(accounts_path=settings.ACCOUNTS_PATH)
@@ -72,7 +79,7 @@ def logout_wifi():
 
 
 if __name__ == '__main__':
-    commands = [UI,auto_assess,download_source,query_grades,hack_accounts,login_wifi,logout_wifi]
+    commands = [UI,auto_assess,download_source,query_grades,hack_accounts,hl_select,login_wifi,logout_wifi]
     for command in commands:
         start.add_command(command)
     start()
