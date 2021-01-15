@@ -5,26 +5,34 @@
 # @Time    : 2019/11/28/028 13:58
 # @WebSite : https://www.gentlecp.com
 
-import sys
-import click
-import logging
 
-from core import ui
+import click
+import sys
+import os
+
+from handler import ui
 from core.wifi import AccHacker
 from core.assess import Assesser
 from core.grade import GradeObserver
 from core.humanity import HlSelector
 from core.download import Downloader
 from core.wifi import WifiLoginer
+from handler.configer import UCASHelperConfigApp
 
 import settings
+
+ROOT_PATH = os.path.dirname(__file__)
+sys.path.append(ROOT_PATH)
 
 
 @click.group()
 def start():
     """UCASHelper is a useful tool for UCASer, following are the arguments that you could choose"""
-    logging.basicConfig(level=logging.INFO,
-                        format='%(asctime)s - %(name)s - %(levelname)s - %(filename)s - %(lineno)d:[%(message)s]')
+
+@click.command(name='config',help='Set your user info and download path')
+def config():
+    UCASHelperConfigApp().run()
+
 
 @click.command(name='ui',help='Get UI interface of UCASHelper')
 def UI():
@@ -33,25 +41,31 @@ def UI():
 
 @click.command(name='down',help='Download resources from sep website')
 def download_source():
-    downloader = Downloader(user_info=settings.USER_INFO,
-                            urls=settings.URLS,
-                            source_dir=settings.SOURCE_DIR,
-                            filter_list=settings.FILTER_LIST)
+    downloader = Downloader(
+        user_config_path=settings.USER_CONFIG_PATH,
+        user_info=settings.USER_INFO,  # 未来删除
+        urls=settings.URLS,
+        resource_path=settings.SOURCE_DIR,  # 未来删除
+        filter_list=settings.FILTER_LIST)
     downloader.run()
 
 
 @click.command(name='assess',help='Auto assess courses and teachers')
 def auto_assess():
-    assesser = Assesser(user_info=settings.USER_INFO,
-                        urls=settings.URLS,
-                        assess_msgs=settings.ASSESS_MSG)
+    assesser = Assesser(
+        user_config_path=settings.USER_CONFIG_PATH,
+        user_info=settings.USER_INFO,  # 未来删除
+        urls=settings.URLS,
+        assess_msgs=settings.ASSESS_MSG)
     assesser.run()
 
 
 @click.command(name='grade',help='Query your grades')
 def query_grades():
-    gradeObserver = GradeObserver(user_info=settings.USER_INFO,
-                                  urls=settings.URLS)
+    gradeObserver = GradeObserver(
+        user_config_path=settings.USER_CONFIG_PATH,
+        user_info=settings.USER_INFO,  # 未来删除
+        urls=settings.URLS)
     gradeObserver.run()
 
 
@@ -79,7 +93,7 @@ def logout_wifi():
 
 
 if __name__ == '__main__':
-    commands = [UI,auto_assess,download_source,query_grades,hack_accounts,hl_select,login_wifi,logout_wifi]
+    commands = [UI,auto_assess,download_source,query_grades,hack_accounts,hl_select,login_wifi,logout_wifi,config]
     for command in commands:
         start.add_command(command)
     start()

@@ -67,3 +67,6 @@ venv.bak/
 
 .idea
 *.un~
+
+accounts*
+*.ini

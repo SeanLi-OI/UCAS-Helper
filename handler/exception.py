@@ -12,6 +12,17 @@
 
 --------------------------------------------
 """
+from enum import IntEnum
+
+class ExitStatus(IntEnum):
+
+    OK = 200
+    CONFIG_ERROR = 401
+    NETWORK_ERROR = 404
+    UNKNOW_ERROR = 500
+
+class ConfigReadError(Exception):
+    pass
 
 
 class BackToMain(Exception):

@@ -12,40 +12,63 @@
 
 --------------------------------------------
 """
-import logging
 import re
-import os
-import sys
-import requests
+import configparser
 
 from bs4 import BeautifulSoup
 from core.login import Loginer
-from core.utils import download_file
+from util.functions import *
+from handler.logger import LogHandler
+from handler.exception import ExitStatus
 
-from pprint import pprint
+
+def show(infos):
+    if infos:
+        for info in infos:
+            print("\033[1;45m [{}]:{} \033[0m".format(info['id'], info['name']))
+    else:
+        print("\033[1;41m尚无信息！\033[0m")
+
 
 class Downloader(Loginer):
-    def __init__(self, user_info, urls, source_dir,filter_list):
-        super().__init__(user_info, urls)
-        self._logger = logging.getLogger("Downloader")
-        self._source_dir = source_dir
-        self._filter_list = filter_list
+    def __init__(self,
+                 urls=None,
+                 user_config_path='../conf/user_config.ini',
+                 *args, **kwargs):
+        super().__init__(urls, user_config_path, *args, **kwargs)
+        self._logger = LogHandler("Downloader")
+        self._resource_path_from_settings = kwargs.get('resource_path')
+        self._filter_list = kwargs.get('filter_list')
+
         self._update_sources = []
         self._l_course_info = []
         self._d_source_info = {}
-        self._S = requests.session()
         self._cur_course_info = None
+
         self._collection_id_pattern = re.compile("value='(?P<collection_id>.*?)';")  # 获取collection id 信息正则
         self._dir_pattern = re.compile("value='/group/[0-9]*/(?P<dir>.*?)';")   # 获取文件夹目录信息正则
-        self.__check_dir(self._source_dir)
 
-    def __check_dir(self, dir):
-        if not os.path.exists(dir):
-            try:
-                os.mkdir(dir)
-            except FileNotFoundError:
-                self._logger.error("资源存储路径非法或不正确，请检查settings中SOURCE_DIR配置！")
-                exit(404)
+    def _set_resource_path(self):
+        '''
+        set resource path from conf/user_config.ini or from settings.py
+        :return: None
+        '''
+
+        from_settings_warning_msg = ('Note: you are using the resource path from settings.py which may remove in the future, '
+                                 'I suggest you to save the resource path in conf/user_config.ini')
+        try:
+            resource_path = self._cfg.get('course_info', 'resource_path')
+        except (configparser.NoSectionError, configparser.NoOptionError) as e:
+            self._logger.warning('Can not read resource path from {}, try to get it from settings.py'.format(self._user_config_path))
+            self._logger.warning(from_settings_warning_msg)
+            self._resource_path = self._resource_path_from_settings
+        else:
+            if not resource_path:
+                self._logger.warning(from_settings_warning_msg)
+                self._resource_path = self._resource_path_from_settings
+            else:
+                self._resource_path = resource_path
+
 
     def __update_source_info(self,course_info, bs4obj, dir):
         i = 1
@@ -88,7 +111,6 @@ class Downloader(Loginer):
                     'sakai_csrf_token': csrf_token
                 }
                 res = self._S.post(source_url, data=data,headers=self.headers)  # 获取文件夹下资源信息
-                print(res.text)
                 bs4obj = BeautifulSoup(res.text, 'html.parser')
                 self._recur_dir(course_info, source_url, bs4obj)
 
@@ -141,18 +163,7 @@ class Downloader(Loginer):
             self._recur_dir(course_info,source_url,bs4obj)
 
 
-    def __recur_mkdir(self,course_dir, dirs):
-        '''
-        递归检查目录是否存在，若不存在则创建
-        :param dirs:
-        :return:
-        '''
-        rec_dir = course_dir  # 递归查询的目录
-        while dirs:
-            rec_dir = rec_dir + '/' + dirs[0]
-            if not os.path.exists(rec_dir):
-                os.mkdir(rec_dir)
-            del dirs[0]
+
 
     def _download_one(self, course_info, source_info):
         '''
@@ -161,11 +172,11 @@ class Downloader(Loginer):
         '''
         # 按季度划分课程
         if "秋季" in course_info['name']:
-            base_dir = self._source_dir + '/秋季/'
+            base_dir = self._resource_path + '/秋季/'
         elif "春季" in course_info['name']:
-            base_dir = self._source_dir + '/春季/'
+            base_dir = self._resource_path + '/春季/'
         else:
-            base_dir = self._source_dir+ '/夏季/'
+            base_dir = self._resource_path + '/夏季/'
         if not os.path.exists(base_dir):
             os.mkdir(base_dir)
 
@@ -176,15 +187,12 @@ class Downloader(Loginer):
         dirs = source_info['name'].split('/')[0:-1]  # 只取目录部分
         if dirs:
             # 存在文件夹，递归检测文件夹
-            self.__recur_mkdir(course_dir,dirs)
+            recur_mkdir(course_dir,dirs)
 
         file_path = base_dir + course_info["name"] + '/' + source_info['name']  # 文件存储路径
         if not os.path.isfile(file_path):
             # 只下载没有的文件，若存在不下载，节省流量
             self._logger.info("正在下载:{}".format(source_info['name']))
-            # content = self._S.get(source_info['url']).content
-            # with open(file_path, 'wb') as f:
-            #     f.write(content)
             download_file(url=source_info['url'], session=self._S, file_path=file_path)
             self._update_sources.append("[{}:{}]".format(course_info["name"], source_info['name']))  # 记录更新的课程数据
 
@@ -199,11 +207,16 @@ class Downloader(Loginer):
         for source_info in self._d_source_info[course_info["name"]]:
             self._download_one(course_info, source_info)
 
-    def _download_all(self):
+    def _download_all(self, season=None):
         for course_info in self._l_course_info:
-            if course_info['name'] not in self._filter_list:
-                self._set_source_info(course_info)
-                self._download_course(course_info)
+            if season is None:
+                if course_info['name'] not in self._filter_list:
+                    self._set_source_info(course_info)
+                    self._download_course(course_info)
+            else:
+                if season in course_info['name'] and course_info['name'] not in self._filter_list:
+                    self._set_source_info(course_info)
+                    self._download_course(course_info)
         if self._update_sources:
             self._logger.info("[同步完成] 本次更新资源列表如下：")
             for source in self._update_sources:
@@ -211,61 +224,19 @@ class Downloader(Loginer):
 
             is_open = input("是否打开资源所在目录(默认n)？(y/n)")
             if is_open == 'y':
-                self.__open_dir()
-            exit(200)
-
+                if open_dir(self._resource_path)==0:
+                    self._logger.info("已为您打开资源目录，请根据更新资源列表查询对应文件！")
+                else:
+                    self._logger.error("打开资源目录失败，请手动开启！")
         else:
             self._logger.info("[同步完成] 本次无更新内容！")
-            exit(200)
+        exit(ExitStatus.OK)
 
-    def __open_dir(self):
-        '''
-        当同步完成的时候，打开对应的目录
-        :return:
-        '''
-        if sys.platform.startswith('win'):
-            result = os.system('start ' + self._source_dir)
-        elif sys.platform.startswith('linux'):
-            result = os.system('nautilus ' + self._source_dir)
-        else:
-            result = os.system('open ' + self._source_dir)
-        if result == 0:
-            print("已为您打开资源目录，请根据更新资源列表查询对应文件！")
-        else:
-            print("打开资源目录失败，请手动开启！")
-
-    def _download_course_by_season(self,season):
-        for course_info in self._l_course_info:
-            if season in course_info['name'] and course_info['name'] not in self._filter_list:
-                self._set_source_info(course_info)
-                self._download_course(course_info)
-
-        if self._update_sources:
-            self._logger.info("[同步完成] 本次更新资源列表如下：")
-            for source in self._update_sources:
-                print('\033[1;41m' + source + '\033[0m')
-
-            is_open = input("是否打开资源所在目录(默认n)？(y/n)")
-            if is_open =='y':
-                self.__open_dir()
-            exit(200)
-
-        else:
-            self._logger.info("[同步完成] 本次无更新内容！")
-            exit(200)
-
-
-    def _show(self, infos):
-        if infos:
-            for info in infos:
-                print("\033[1;45m [{}]:{} \033[0m".format(info['id'], info['name']))
-        else:
-            print("\033[1;41m尚无信息！\033[0m")
 
     def __check_option(self, option):
         if option == 'q':
             print("欢迎使用，下次再会~")
-            exit(200)
+            exit(ExitStatus.OK)
 
         elif option == 'b' and self._cur_course_info:
             self._cur_course_info = None  # 清空
@@ -276,15 +247,15 @@ class Downloader(Loginer):
             return False
 
         elif option == 's' and not self._cur_course_info:
-            self._download_course_by_season('春季')
+            self._download_all(season='春季')
             return False
 
         elif option == 'm' and not self._cur_course_info:
-            self._download_course_by_season('夏季')
+            self._download_all(season='夏季')
             return False
 
         elif option == 'f' and not self._cur_course_info:
-            self._download_course_by_season('秋季')
+            self._download_all(season='秋季')
             return False
 
         elif option == 'a' and self._cur_course_info:
@@ -313,10 +284,11 @@ class Downloader(Loginer):
             self._logger.warning("非法操作，请重新输入")
             return False
 
+
     def _cmd(self):
         while True:
             print("\033[1;45m>课程列表：\033[0m", flush=True)
-            self._show(self._l_course_info)
+            show(self._l_course_info)
             print("""
 ***************************************
 *       id:显示对应课程的所有资源       *
@@ -333,7 +305,7 @@ class Downloader(Loginer):
                 continue
             while True:
                 print("\033[1;45m>课程列表>{}:\033[0m".format(self._cur_course_info["name"]))
-                self._show(self._d_source_info[self._cur_course_info["name"]])
+                show(self._d_source_info[self._cur_course_info["name"]])
                 print("""
 *********************************
 *       id:下载对应id资源         *
@@ -348,6 +320,10 @@ class Downloader(Loginer):
                     break
 
     def run(self):
+        self._set_resource_path()
+        if check_dir(self._resource_path):
+            self._logger.error("资源存储路径非法或不正确，请检查你的resource_path配置是否正确！")
+            exit(ExitStatus.CONFIG_ERROR)
         self.login()
         self._set_course_info()  # 添加所有课程信息到内存中
         self._cmd()  # 进入交互界面
@@ -358,6 +334,6 @@ import settings
 if __name__ == '__main__':
     downloader = Downloader(user_info=settings.USER_INFO,
                             urls=settings.URLS,
-                            source_dir=settings.SOURCE_DIR,
-                            filter_list=settings.FILTER_LIST)
+                            resource_path=settings.SOURCE_DIR,
+                            )
     downloader.run()
